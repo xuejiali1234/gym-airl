@@ -22,3 +22,11 @@ weights/
 *.tar.gz
 *.png
 data/
+
+# Repository overrides: keep only plotting source scripts under train_log.
+!train_log/
+train_log/*
+!train_log/*.py
+
+# IDE / local tooling
+.idea/
