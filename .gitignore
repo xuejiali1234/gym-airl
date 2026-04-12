@@ -20,3 +20,5 @@ weights/
 *.pth
 *.zip
 *.tar.gz
+*.png
+data/
