@@ -1,0 +1,22 @@
+# 1. 忽略 Python 虚拟环境和缓存
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 2. 忽略训练日志和评估数据 (根据你的截图和描述)
+train_log/
+logs/
+results/
+baseline_attn_*/
+*.csv
+*.png  # 如果你不想把生成的折线图也传上去
+
+# 3. 忽略模型权重文件
+checkpoints/
+models/
+weights/
+*.pt
+*.pth
+*.zip
+*.tar.gz
