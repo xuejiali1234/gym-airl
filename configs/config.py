@@ -29,8 +29,16 @@ class Config:
     X_MAX = 72
 
     # [新增] PPO 训练参数
-    PPO_EPOCHS = 5
+    PPO_EPOCHS = 8
     PPO_MINI_BATCH_SIZE = 256
+    # PPO策略熵系数
+    ENT_COEF = 0.005
+    # PPO策略裁剪范围
+    CLIP_RANGE = 0.2
+    # PPO价值函数裁剪范围，None表示关闭
+    CLIP_RANGE_VF = 0.2
+    # PPO提前停止的KL阈值
+    TARGET_KL = 0.01
 
     # [新增] Ranking Loss 的 Margin 建议设为 0.1 到 0.5 之间。
     # 如果 Value Network 的输出本身就在 0.0~1.0 之间，设 1.0 太难了，设 0.2 比较合理。
@@ -72,6 +80,18 @@ class Config:
     # Alternative safety-heavier reference: baseline_attn_20260412_192958 -> 7e-5
     DISCRIMINATOR_LEARNING_RATE = 5e-5
     GENERATOR_LEARNING_RATE = 8e-5
+    # AIRL每轮判别器更新次数
+    N_DISC_UPDATES_PER_ROUND = 6
+    # AIRL专家样本批大小
+    DEMO_BATCH_SIZE = 256
+    # AIRL生成样本回放池容量
+    GEN_REPLAY_BUFFER_CAPACITY = 2048
+    # 每多少个epoch保存一次checkpoint
+    SAVE_FREQ_EPOCHS = 20
+    # 周期评估episode数量
+    N_EVAL_EPISODES = 20
+    # 首次有效跨线奖励
+    GOAL_BONUS = 0.5
 
     # [新增] 消融实验开关 (Ablation Study)
     # -------------------------------------------------

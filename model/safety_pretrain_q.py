@@ -72,14 +72,15 @@ def build_safety_training_tensors(
     seed: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     states, actions = _stack_all_state_action(dataset)
-    sample_generator = _make_generator(seed, device="cpu")
+    cpu_generator = _make_generator(seed, device="cpu")
     if states.shape[0] > max_pairs:
-        idx = torch.randperm(states.shape[0], generator=sample_generator)[:max_pairs]
+        idx = torch.randperm(states.shape[0], generator=cpu_generator)[:max_pairs]
         states = states[idx]
         actions = actions[idx]
 
     states = states.to(device)
     actions = actions.to(device)
+    device_generator = _make_generator(seed, device=device)
 
     with torch.no_grad():
         labels = oracle.get_labels(states, actions).squeeze(-1)
@@ -92,7 +93,7 @@ def build_safety_training_tensors(
     synth_states, synth_actions = _generate_candidate_unsafe_actions(
         safe_states,
         multiplier=synthetic_multiplier,
-        generator=sample_generator,
+        generator=device_generator,
     )
     with torch.no_grad():
         synth_labels = oracle.get_labels(synth_states, synth_actions).squeeze(-1)

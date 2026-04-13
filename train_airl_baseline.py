@@ -76,6 +76,13 @@ def save_run_metadata(log_dir, payload):
     with open(metadata_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
 
+
+def resolve_device(device_name):
+    requested = str(device_name).lower()
+    if requested.startswith("cuda") and torch.cuda.is_available():
+        return torch.device(device_name)
+    return torch.device("cpu")
+
 def convert_to_trajectories(dataset, cfg):
     """将专家数据打包，并根据 Config 决定是否将 goal 拼接到 state 中"""
     trajectories = []
@@ -219,7 +226,19 @@ def main():
     cfg = Config()
     deterministic_training = getattr(cfg, "DETERMINISTIC_TRAINING", True)
     seed_everything(cfg.SEED, deterministic=deterministic_training)
-    device = torch.device("cpu")
+    requested_device = getattr(cfg, "DEVICE", "cpu")
+    device = resolve_device(requested_device)
+    actual_device = str(device)
+    ent_coef = getattr(cfg, "ENT_COEF", 0.005)
+    clip_range = getattr(cfg, "CLIP_RANGE", 0.2)
+    clip_range_vf = getattr(cfg, "CLIP_RANGE_VF", None)
+    target_kl = getattr(cfg, "TARGET_KL", 0.01)
+    goal_bonus = getattr(cfg, "GOAL_BONUS", 0.5)
+    n_disc_updates_per_round = getattr(cfg, "N_DISC_UPDATES_PER_ROUND", 6)
+    demo_batch_size = getattr(cfg, "DEMO_BATCH_SIZE", 256)
+    gen_replay_buffer_capacity = getattr(cfg, "GEN_REPLAY_BUFFER_CAPACITY", 2048)
+    save_freq_epochs = getattr(cfg, "SAVE_FREQ_EPOCHS", 20)
+    n_eval_episodes = getattr(cfg, "N_EVAL_EPISODES", 20)
 
     # ---------------------------------------------------------
     # [核心修改]: 根据消融开关挂载不同的网络架构 (严格对齐参数规模)
@@ -242,6 +261,7 @@ def main():
     print(f"[*] 日志系统已就绪，所有训练数据将保存在: {log_dir}")
     print(f"[*] 当前网络架构: {'Attention (跳跃拼接)' if enable_attention else 'Pure MLP'}")
     print(f"[*] Repro seed={cfg.SEED}, deterministic={deterministic_training}")
+    print(f"[*] Device request={requested_device}, actual={actual_device}")
     if getattr(cfg, "ENABLE_SAFETY_MODULE", False):
         print(
             "[*] 当前安全模块: 新 Q 安全模块 "
@@ -310,7 +330,6 @@ def main():
     env = DummyVecEnv([make_train_env])
     env.seed(cfg.SEED)
     divider_x = cfg.X_MIN + cfg.LANE_WIDTH
-    goal_bonus = 0.5
 
     # ---------------------------------------------------------
     # [核心修改]: 根据消融开关挂载不同的网络架构
@@ -415,18 +434,19 @@ def main():
         batch_size=cfg.PPO_MINI_BATCH_SIZE,
         learning_rate=cfg.GENERATOR_LEARNING_RATE,
         n_epochs=cfg.PPO_EPOCHS,
-        ent_coef=0.005,  
-        clip_range=0.2,
-        target_kl=0.01,         
+        ent_coef=ent_coef,
+        clip_range=clip_range,
+        clip_range_vf=clip_range_vf,
+        target_kl=target_kl,
         policy_kwargs=policy_kwargs,
         seed=cfg.SEED,
+        device=actual_device,
     )
 
-    n_disc_updates_per_round = 6
     trainer_kwargs = dict(
         demonstrations=expert_trajectories,
-        demo_batch_size=256,
-        gen_replay_buffer_capacity=2048,
+        demo_batch_size=demo_batch_size,
+        gen_replay_buffer_capacity=gen_replay_buffer_capacity,
         n_disc_updates_per_round=n_disc_updates_per_round,
         venv=env,
         gen_algo=learner,
@@ -449,12 +469,10 @@ def main():
     # ==========================================
     # 4. 切块训练与定期保存 (Chunked Training)
     # ==========================================
-    save_freq_epochs = 20
     total_epochs = cfg.EPOCHS
     chunks = total_epochs // save_freq_epochs
     steps_per_chunk = save_freq_epochs * cfg.STEPS_PER_EPOCH
     base_gen_lr = cfg.GENERATOR_LEARNING_RATE
-    n_eval_episodes = 20
     safety_unfreeze_timesteps = getattr(cfg, "SAFETY_UNFREEZE_TIMESTEPS", 100000)
     safety_light_unfreeze_lr = getattr(cfg, "SAFETY_LIGHT_UNFREEZE_LR", 1e-5)
     safety_phase = "frozen"
@@ -466,16 +484,33 @@ def main():
     save_run_metadata(
         log_dir,
         {
-            "reference_run": "baseline_attn_20260412_183104",
+            "notes": {
+                "reference_run": "baseline_attn_20260412_183104",
+                "reference_run_role": "historical_reference_only",
+            },
             "config": config_to_dict(cfg),
             "effective_params": {
                 "seed": cfg.SEED,
                 "deterministic_training": deterministic_training,
+                "requested_device": str(requested_device),
+                "actual_device": actual_device,
+                "ppo_epochs": cfg.PPO_EPOCHS,
+                "ppo_mini_batch_size": cfg.PPO_MINI_BATCH_SIZE,
+                "ent_coef": ent_coef,
+                "clip_range": clip_range,
+                "clip_range_vf": clip_range_vf,
+                "target_kl": target_kl,
                 "n_disc_updates_per_round": n_disc_updates_per_round,
+                "demo_batch_size": demo_batch_size,
+                "gen_replay_buffer_capacity": gen_replay_buffer_capacity,
                 "save_freq_epochs": save_freq_epochs,
                 "n_eval_episodes": n_eval_episodes,
                 "goal_bonus": goal_bonus,
+                "steps_per_epoch": cfg.STEPS_PER_EPOCH,
                 "attention_query_uses_goal": False,
+                "safety_fuse_feature_effective": False,
+                "safety_embed_dim_effective": 1,
+                "safety_embed_mode": "scalar_only",
                 "safety_phase_initial": "frozen",
             },
         },
