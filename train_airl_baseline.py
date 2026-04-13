@@ -417,7 +417,7 @@ def main():
         n_epochs=cfg.PPO_EPOCHS,
         ent_coef=0.005,  
         clip_range=0.2,
-        target_kl=0.01,         
+        target_kl=0.008,         
         policy_kwargs=policy_kwargs,
         seed=cfg.SEED,
     )

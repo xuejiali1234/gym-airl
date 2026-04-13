@@ -131,7 +131,7 @@ def visualize_attention_analysis():
     # ---------------------------------------------------------
     try:
         # 修改为最新的 Attention 模型名称
-        model_path = os.path.join(root_dir, "checkpoints", "baseline_policy_attn_epoch_400.zip")
+        model_path = os.path.join(root_dir, "checkpoints", "baseline_policy_attn_epoch_200.zip")
         
         if not os.path.exists(model_path):
             zips = glob.glob(os.path.join(root_dir, "checkpoints", "*_attn_*.zip"))

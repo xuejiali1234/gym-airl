@@ -47,7 +47,7 @@ class Config:
     DEVICE = "cuda"
     SEED = 42
     DETERMINISTIC_TRAINING = True
-    EPOCHS = 220
+    EPOCHS = 200
     STEPS_PER_EPOCH = 2048
     OUTER_UPDATE_FREQ = 5
 
@@ -71,7 +71,7 @@ class Config:
     # Reference reproduction target: baseline_attn_20260412_183104
     # Alternative safety-heavier reference: baseline_attn_20260412_192958 -> 7e-5
     DISCRIMINATOR_LEARNING_RATE = 5e-5
-    GENERATOR_LEARNING_RATE = 1e-4
+    GENERATOR_LEARNING_RATE = 8e-5
 
     # [新增] 消融实验开关 (Ablation Study)
     # -------------------------------------------------
@@ -96,7 +96,7 @@ class Config:
     # 安全模块超参数
     SAFETY_LEARNING_RATE = 1e-4
     SAFETY_COEFF = 0.00       # Lambda (惩罚权重)
-    SAFETY_REGULATOR_COEFF = 0.05  # [新增] 安全调节器权重
+    SAFETY_REGULATOR_COEFF = 0.06  # [新增] 安全调节器权重
     SAFETY_USE_ACTION = True
     SAFETY_FUSE_FEATURE = True
     SAFETY_BATCH_SIZE = 256
