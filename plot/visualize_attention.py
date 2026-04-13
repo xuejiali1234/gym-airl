@@ -147,7 +147,7 @@ def visualize_attention_analysis():
     # ---------------------------------------------------------
     # 3. 选择测试文件
     # ---------------------------------------------------------
-    target_filename = "vehicle_61_trajectory.csv"
+    target_filename = "vehicle_1280_trajectory.csv"
     data_root = os.path.join(root_dir, "data")
     files = glob.glob(os.path.join(data_root, "**", target_filename), recursive=True)
     

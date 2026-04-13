@@ -29,7 +29,7 @@ class Config:
     X_MAX = 72
 
     # [新增] PPO 训练参数
-    PPO_EPOCHS = 10
+    PPO_EPOCHS = 5
     PPO_MINI_BATCH_SIZE = 256
 
     # [新增] Ranking Loss 的 Margin 建议设为 0.1 到 0.5 之间。
