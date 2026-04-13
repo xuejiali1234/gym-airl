@@ -39,9 +39,7 @@ class MergingEnv(gym.Env):
         super().reset(seed=seed)
         
         # 使用提供的 seed 或 numpy 随机选择轨迹
-        if seed is not None:
-            np.random.seed(seed)
-        idx = np.random.randint(0, len(self.dataset))
+        idx = int(self.np_random.integers(0, len(self.dataset)))
         
         self.current_traj = self.dataset[idx]
         self.t = 0

@@ -46,6 +46,7 @@ class Config:
     # --- 训练参数 ---
     DEVICE = "cuda"
     SEED = 42
+    DETERMINISTIC_TRAINING = True
     EPOCHS = 220
     STEPS_PER_EPOCH = 2048
     OUTER_UPDATE_FREQ = 5
@@ -67,6 +68,8 @@ class Config:
     ENABLE_SAFETY_PRETRAIN = True
 
     # 学习率
+    # Reference reproduction target: baseline_attn_20260412_183104
+    # Alternative safety-heavier reference: baseline_attn_20260412_192958 -> 7e-5
     DISCRIMINATOR_LEARNING_RATE = 5e-5
     GENERATOR_LEARNING_RATE = 1e-4
 

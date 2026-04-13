@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -17,7 +17,24 @@ def _stack_all_state_action(dataset) -> Tuple[torch.Tensor, torch.Tensor]:
 
 
 
-def _generate_candidate_unsafe_actions(states: torch.Tensor, *, multiplier: float = 1.0) -> torch.Tensor:
+def _make_generator(seed: Optional[int], device: str | torch.device = "cpu") -> Optional[torch.Generator]:
+    if seed is None:
+        return None
+    device_str = str(device)
+    try:
+        generator = torch.Generator(device=device_str)
+    except RuntimeError:
+        generator = torch.Generator()
+    generator.manual_seed(int(seed))
+    return generator
+
+
+def _generate_candidate_unsafe_actions(
+    states: torch.Tensor,
+    *,
+    multiplier: float = 1.0,
+    generator: Optional[torch.Generator] = None,
+) -> torch.Tensor:
     """
     Generate action proposals that are intentionally more aggressive than the expert.
     The oracle will filter them, so the output only needs to be diverse and slightly biased.
@@ -26,17 +43,21 @@ def _generate_candidate_unsafe_actions(states: torch.Tensor, *, multiplier: floa
         return torch.empty((0, 2), dtype=states.dtype, device=states.device)
 
     n = max(1, int(states.shape[0] * multiplier))
-    idx = torch.randint(0, states.shape[0], (n,), device=states.device)
+    idx = torch.randint(0, states.shape[0], (n,), device=states.device, generator=generator)
     sampled = states[idx]
 
     actions = torch.empty((n, 2), dtype=sampled.dtype, device=sampled.device)
-    actions[:, 0] = torch.empty(n, device=sampled.device).uniform_(-1.0, 1.0)
+    actions[:, 0] = torch.empty(n, device=sampled.device).uniform_(-1.0, 1.0, generator=generator)
     # Bias toward large positive longitudinal acceleration to create low-TTC cases.
-    actions[:, 1] = torch.empty(n, device=sampled.device).uniform_(0.4, 1.0)
+    actions[:, 1] = torch.empty(n, device=sampled.device).uniform_(0.4, 1.0, generator=generator)
 
     # Mix in a few hard-braking actions to cover rear-end / oscillation risk too.
-    mask_brake = torch.rand(n, device=sampled.device) < 0.25
-    actions[mask_brake, 1] = torch.empty(mask_brake.sum(), device=sampled.device).uniform_(-1.0, -0.4)
+    mask_brake = torch.rand(n, device=sampled.device, generator=generator) < 0.25
+    actions[mask_brake, 1] = torch.empty(mask_brake.sum(), device=sampled.device).uniform_(
+        -1.0,
+        -0.4,
+        generator=generator,
+    )
     return sampled, actions
 
 
@@ -48,10 +69,12 @@ def build_safety_training_tensors(
     max_pairs: int = 50000,
     synthetic_multiplier: float = 1.0,
     device: str | torch.device = "cpu",
+    seed: Optional[int] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     states, actions = _stack_all_state_action(dataset)
+    sample_generator = _make_generator(seed, device="cpu")
     if states.shape[0] > max_pairs:
-        idx = torch.randperm(states.shape[0])[:max_pairs]
+        idx = torch.randperm(states.shape[0], generator=sample_generator)[:max_pairs]
         states = states[idx]
         actions = actions[idx]
 
@@ -69,6 +92,7 @@ def build_safety_training_tensors(
     synth_states, synth_actions = _generate_candidate_unsafe_actions(
         safe_states,
         multiplier=synthetic_multiplier,
+        generator=sample_generator,
     )
     with torch.no_grad():
         synth_labels = oracle.get_labels(synth_states, synth_actions).squeeze(-1)
@@ -100,6 +124,7 @@ def pretrain_safety_q_network(
     pos_weight: float = 3.0,
     max_pairs: int = 50000,
     synthetic_multiplier: float = 1.0,
+    seed: Optional[int] = None,
     verbose: bool = True,
 ) -> Dict[str, float]:
     safety_net = safety_net.to(device)
@@ -110,6 +135,7 @@ def pretrain_safety_q_network(
         max_pairs=max_pairs,
         synthetic_multiplier=synthetic_multiplier,
         device=device,
+        seed=seed,
     )
 
     if safe_s.numel() == 0 or unsafe_s.numel() == 0:
@@ -128,7 +154,14 @@ def pretrain_safety_q_network(
     )
 
     ds = TensorDataset(x_s, x_a, y)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
+    loader_generator = _make_generator(seed, device="cpu")
+    loader = DataLoader(
+        ds,
+        batch_size=batch_size,
+        shuffle=True,
+        drop_last=False,
+        generator=loader_generator,
+    )
 
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor([pos_weight], dtype=torch.float32, device=device)

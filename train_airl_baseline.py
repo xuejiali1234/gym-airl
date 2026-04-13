@@ -1,6 +1,8 @@
 import os
 import csv
 import copy
+import json
+import random
 from datetime import datetime
 import gymnasium as gym
 import numpy as np
@@ -36,6 +38,43 @@ from model.safety_q_module import SafetyQNetwork, SafeQAttentionRewardNet, SafeQ
 from model.safety_oracle_q import SafetyOracleQ
 from model.safety_pretrain_q import pretrain_safety_q_network
 from model.safety_airl import MildSafetyAIRL
+
+
+def seed_everything(seed, deterministic=True):
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    if deterministic:
+        if hasattr(torch.backends, "cudnn"):
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+        try:
+            torch.use_deterministic_algorithms(True, warn_only=True)
+        except TypeError:
+            torch.use_deterministic_algorithms(True)
+
+
+def config_to_dict(cfg):
+    result = {}
+    for key in dir(cfg):
+        if not key.isupper():
+            continue
+        value = getattr(cfg, key)
+        if callable(value):
+            continue
+        result[key] = value
+    return result
+
+
+def save_run_metadata(log_dir, payload):
+    metadata_path = os.path.join(log_dir, "run_config.json")
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2, sort_keys=True)
 
 def convert_to_trajectories(dataset, cfg):
     """将专家数据打包，并根据 Config 决定是否将 goal 拼接到 state 中"""
@@ -178,6 +217,8 @@ def append_eval_metrics(log_dir, row):
 
 def main():
     cfg = Config()
+    deterministic_training = getattr(cfg, "DETERMINISTIC_TRAINING", True)
+    seed_everything(cfg.SEED, deterministic=deterministic_training)
     device = torch.device("cpu")
 
     # ---------------------------------------------------------
@@ -200,6 +241,7 @@ def main():
     custom_logger = init_logger(folder=log_dir, format_strs=["stdout", "csv", "log"])
     print(f"[*] 日志系统已就绪，所有训练数据将保存在: {log_dir}")
     print(f"[*] 当前网络架构: {'Attention (跳跃拼接)' if enable_attention else 'Pure MLP'}")
+    print(f"[*] Repro seed={cfg.SEED}, deterministic={deterministic_training}")
     if getattr(cfg, "ENABLE_SAFETY_MODULE", False):
         print(
             "[*] 当前安全模块: 新 Q 安全模块 "
@@ -250,6 +292,7 @@ def main():
             batch_size=512,
             lr=cfg.SAFETY_LEARNING_RATE,
             synthetic_multiplier=1.0,
+            seed=cfg.SEED,
             verbose=True,
         )
         print(f"[*] Safety pretrain done: {pretrain_stats}")
@@ -257,13 +300,17 @@ def main():
     # ==========================================
     # 3. 初始化环境与网络
     # ==========================================
-    raw_env = MergingEnv(train_dataset)
-    monitored_env = Monitor(
-        raw_env,
-        info_keywords=("is_success", "is_merge_success", "is_endpoint_success", "is_safety_success"),
-    )
-    env = DummyVecEnv([lambda: monitored_env])
+    def make_train_env():
+        raw_env = MergingEnv(train_dataset)
+        return Monitor(
+            raw_env,
+            info_keywords=("is_success", "is_merge_success", "is_endpoint_success", "is_safety_success"),
+        )
+
+    env = DummyVecEnv([make_train_env])
+    env.seed(cfg.SEED)
     divider_x = cfg.X_MIN + cfg.LANE_WIDTH
+    goal_bonus = 0.5
 
     # ---------------------------------------------------------
     # [核心修改]: 根据消融开关挂载不同的网络架构
@@ -297,7 +344,7 @@ def main():
             expert_mean_x=train_dataset.expert_mean[0],
             expert_std_x=train_dataset.expert_std[0],
             divider_x=divider_x,
-            goal_bonus=0.5,
+            goal_bonus=goal_bonus,
         )
         
         # 2. 生成器 (PPO)：提取特征后，送入严格对齐的 128x128 网络
@@ -339,7 +386,7 @@ def main():
             expert_mean_x=train_dataset.expert_mean[0],
             expert_std_x=train_dataset.expert_std[0],
             divider_x=divider_x,
-            goal_bonus=0.5,
+            goal_bonus=goal_bonus,
         )
         
         # 2. 生成器 (PPO)：直接送入严格对齐的 128x128 网络
@@ -371,14 +418,16 @@ def main():
         ent_coef=0.005,  
         clip_range=0.2,
         target_kl=0.01,         
-        policy_kwargs=policy_kwargs
+        policy_kwargs=policy_kwargs,
+        seed=cfg.SEED,
     )
 
+    n_disc_updates_per_round = 6
     trainer_kwargs = dict(
         demonstrations=expert_trajectories,
         demo_batch_size=256,
         gen_replay_buffer_capacity=2048,
-        n_disc_updates_per_round=4,
+        n_disc_updates_per_round=n_disc_updates_per_round,
         venv=env,
         gen_algo=learner,
         reward_net=reward_net,
@@ -413,6 +462,23 @@ def main():
     safety_grad_scale = min(
         1.0,
         safety_light_unfreeze_lr / max(float(cfg.DISCRIMINATOR_LEARNING_RATE), 1e-12),
+    )
+    save_run_metadata(
+        log_dir,
+        {
+            "reference_run": "baseline_attn_20260412_183104",
+            "config": config_to_dict(cfg),
+            "effective_params": {
+                "seed": cfg.SEED,
+                "deterministic_training": deterministic_training,
+                "n_disc_updates_per_round": n_disc_updates_per_round,
+                "save_freq_epochs": save_freq_epochs,
+                "n_eval_episodes": n_eval_episodes,
+                "goal_bonus": goal_bonus,
+                "attention_query_uses_goal": False,
+                "safety_phase_initial": "frozen",
+            },
+        },
     )
 
     if getattr(cfg, "ENABLE_SAFETY_MODULE", False) and hasattr(base_reward_net, "set_safety_training_phase"):
