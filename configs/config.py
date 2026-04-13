@@ -29,14 +29,14 @@ class Config:
     X_MAX = 72
 
     # [新增] PPO 训练参数
-    PPO_EPOCHS = 8
+    PPO_EPOCHS = 6
     PPO_MINI_BATCH_SIZE = 256
     # PPO策略熵系数
     ENT_COEF = 0.005
     # PPO策略裁剪范围
-    CLIP_RANGE = 0.2
+    CLIP_RANGE = 0.15
     # PPO价值函数裁剪范围，None表示关闭
-    CLIP_RANGE_VF = 0.2
+    CLIP_RANGE_VF = None
     # PPO提前停止的KL阈值
     TARGET_KL = 0.01
 

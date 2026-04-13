@@ -153,5 +153,5 @@ def plot_combined_figures(csv_path, save_dir):
 
 if __name__ == '__main__':
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_absolute_path = os.path.join(script_dir, 'baseline_attn_20260413_202156', 'progress.csv')
+    csv_absolute_path = os.path.join(script_dir, 'baseline_attn_20260413_221903', 'progress.csv')
     plot_combined_figures(csv_absolute_path, script_dir)

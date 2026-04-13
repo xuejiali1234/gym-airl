@@ -1,0 +1,68 @@
+最近这段调参主线已经比较清楚了。
+
+当前最好、最稳的参考线仍然是 [baseline_attn_20260413_181153](d:/NGsim数据集/GYM基线%20-%20副本/train_log/baseline_attn_20260413_181153/eval_metrics.csv)：
+- `PPO_EPOCHS = 8`
+- `clip_range = 0.2`
+- `clip_range_vf = None`
+- `gen_lr = 8e-5`
+- `disc_lr = 5e-5`
+- `safety_reg = 0.06`
+- `epochs = 200`
+
+这轮的 final 是：
+- `merge = 0.75`
+- `endpoint = 1.00`
+- `safety = 0.65`
+- `mean_abs_acc = 2.20`
+- `min_ttc = 11.39`
+
+后面我们试了两条 PPO 护栏方向：
+
+1. `clip_range_vf = 0.2`
+对应 [baseline_attn_20260413_211218](d:/NGsim数据集/GYM基线%20-%20副本/train_log/baseline_attn_20260413_211218/eval_metrics.csv)
+结果明显变差：
+- final 掉到 `merge = 0.45 / endpoint = 0.65 / safety = 0.15`
+- `value_loss` 很高
+- 说明 value clipping 在你这套 AIRL 上更像是把 critic 限死了，而不是帮它稳住
+
+结论：
+- `clip_range_vf = 0.2` 拒绝
+
+2. `clip_range = 0.15`
+对应 [baseline_attn_20260413_214634](d:/NGsim数据集/GYM基线%20-%20副本/train_log/baseline_attn_20260413_214634/eval_metrics.csv)
+结果也不理想：
+- 中期 `120/140 epoch` 出现明显塌陷
+- final 只有 `merge = 0.55 / endpoint = 0.95 / safety = 0.50`
+
+结论：
+- `clip_range = 0.15` 也不如 `0.2`
+
+然后你又试了 `PPO_EPOCHS = 6`，但这里要特别注意：
+- 最新这轮 [baseline_attn_20260413_221903](d:/NGsim数据集/GYM基线%20-%20副本/train_log/baseline_attn_20260413_221903/run_config.json) 里，`clip_range` 仍然是 `0.15`
+- 所以这不是“只改 PPO_EPOCHS”的纯净实验
+- 它其实是：
+  - `PPO_EPOCHS = 6`
+  - `clip_range = 0.15`
+
+这轮相对 `8 + 0.15` 的 [baseline_attn_20260413_214634](d:/NGsim数据集/GYM基线%20-%20副本/train_log/baseline_attn_20260413_214634/eval_metrics.csv) 是有改善的：
+- `120/140 epoch` 的大塌陷明显减轻
+- 前半程稳定很多
+- 但 final 仍然不如 `8 + 0.2` 那条主 baseline
+
+所以到目前为止，最干净的总结是：
+
+- `PPO_EPOCHS: 10 -> 8` 是成功的
+- `clip_range_vf = 0.2` 失败
+- `clip_range = 0.15` 失败
+- `PPO_EPOCHS = 6` 在 `clip_range = 0.15` 这条线上有改善，但不能证明它比 `8 + 0.2` 更好
+- 当前主 baseline 仍然建议回到：
+  - `PPO_EPOCHS = 8`
+  - `clip_range = 0.2`
+  - `clip_range_vf = None`
+
+一句话总结：
+- 真正有效的 PPO 调参，目前只有 `10 -> 8`
+- 两个 clipping 方向都没有带来更好的最终解
+- 你最新这轮 `6` 还不能单独下结论，因为它混着 `clip_range = 0.15`
+
+如果你愿意，我下一步可以把这段概要同步补进 [tuning_summary_for_research_model.md](d:/NGsim数据集/GYM基线%20-%20副本/tuning_summary_for_research_model.md)。
